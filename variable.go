@@ -7,8 +7,11 @@ import (
 	"github.com/crawlab-team/crawlab-db/mongo"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
+	"regexp"
 	"strings"
 )
+
+var userRegexp, _ = regexp.Compile("^user(?:\\[(\\w+)\\])?$")
 
 type Variable struct {
 	root   interface{}
@@ -48,6 +51,20 @@ func (v *Variable) getNextNode(currentNode bson.M, currentIndex int) (nextNode b
 	nextIndex := currentIndex + 1
 	nextToken := v.tokens[nextIndex]
 
+	// attempt to get attribute in current node
+	nextNodeRes, ok := currentNode[nextToken]
+	if ok {
+		nextNode, ok = nextNodeRes.(bson.M)
+		if ok {
+			return nextNode, nil
+		}
+	}
+
+	// if next token is user or user[<action>]
+	if userRegexp.MatchString(nextToken) {
+		return v.getNextNodeByUid(currentNode, nextIndex, nextToken)
+	}
+
 	// next id
 	nextIdKey := fmt.Sprintf("%s_id", nextToken)
 	nextIdRes, ok := currentNode[nextIdKey]
@@ -74,6 +91,54 @@ func (v *Variable) getNextNode(currentNode bson.M, currentIndex int) (nextNode b
 
 	// get next node from mongo collection
 	if err := mongo.GetMongoCol(colName).FindId(nextId).One(&nextNode); err != nil {
+		return nil, err
+	}
+
+	return nextNode, nil
+}
+
+func (v *Variable) getNextNodeByUid(currentNode bson.M, nextIndex int, nextToken string) (nextNode bson.M, err error) {
+	// action
+	matches := userRegexp.FindStringSubmatch(nextToken)
+	action := "create"
+	if len(matches) > 1 && matches[1] != "" {
+		action = matches[1]
+	}
+
+	// id
+	idRes, ok := currentNode["_id"]
+	if !ok {
+		return nil, errors.New(fmt.Sprintf("%s is not available in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+	idStr, ok := idRes.(string)
+	if !ok {
+		return nil, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+	id, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		return nil, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+
+	// artifact
+	var artifact bson.M
+	if err := mongo.GetMongoCol("artifacts").FindId(id).One(&artifact); err != nil {
+		return nil, err
+	}
+
+	// artifact._sys
+	sysRes, ok := artifact["_sys"]
+	if !ok {
+		return nil, errors.New(fmt.Sprintf("_sys not exists in artifact of %s", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+	sys, ok := sysRes.(bson.M)
+	if !ok {
+		return nil, errors.New(fmt.Sprintf("_sys is invalid in artifact of %s", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+
+	// <action>_uid
+	uidRes, _ := sys[action+"_uid"]
+	uid, _ := uidRes.(primitive.ObjectID)
+	if err := mongo.GetMongoCol("users").FindId(uid).One(&nextNode); err != nil {
 		return nil, err
 	}
 

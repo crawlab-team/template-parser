@@ -90,7 +90,7 @@ func (p *GeneralParser) GetPlaceholders() (placeholders []string) {
 }
 
 func NewGeneralParser() (p Parser, err error) {
-	tagPattern := "\\{\\{ *([\\$\\.\\w_]+) *\\}\\}"
+	tagPattern := "\\{\\{ *([\\$\\.\\w_\\[\\]]+) *\\}\\}"
 	tagRegexp, err := regexp.Compile(tagPattern)
 	if err != nil {
 		return nil, err

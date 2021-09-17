@@ -13,7 +13,7 @@ import (
 func TestGeneralParser(t *testing.T) {
 	p, _ := parser.NewGeneralParser()
 	content := `The task {{  $.node }} (enabled: {{$.node.enabled}}) has completed.
-Yours, {{$.user}}`
+Yours, {{$.user[create]}}`
 	err := p.Parse(content)
 	fmt.Println(p.(*parser.GeneralParser).GetPlaceholders())
 	require.Nil(t, err)
@@ -28,6 +28,14 @@ func TestGeneralParser_Parse(t *testing.T) {
 		"_id":     nodeId,
 		"name":    "Test Node",
 		"enabled": true,
+		"settings": bson.M{
+			"max_runners": 8,
+		},
+	})
+	require.Nil(t, err)
+	spiderId := primitive.NewObjectID()
+	_, err = mongo.GetMongoCol("spiders").Insert(bson.M{
+		"_id": spiderId,
 	})
 	require.Nil(t, err)
 	userId := primitive.NewObjectID()
@@ -37,24 +45,43 @@ func TestGeneralParser_Parse(t *testing.T) {
 		"username": "Test Username",
 	})
 	require.Nil(t, err)
+	userIdUpdate := primitive.NewObjectID()
+	_, err = mongo.GetMongoCol("users").Insert(bson.M{
+		"_id":      userIdUpdate,
+		"no":       1002,
+		"username": "Test2 Username",
+	})
+	require.Nil(t, err)
+
+	taskId := primitive.NewObjectID()
+	task := bson.M{
+		"_id":       taskId,
+		"node_id":   nodeId,
+		"spider_id": spiderId,
+	}
+	_, err = mongo.GetMongoCol("artifacts").Insert(bson.M{
+		"_id": taskId,
+		"_sys": bson.M{
+			"create_uid": userId,
+			"update_uid": userIdUpdate,
+		},
+	})
 
 	p, _ := parser.NewGeneralParser()
-	template := `The task on node {{  $.node.name }} (enabled: {{$.node.enabled}}) has completed.
-Yours, {{$.user.username}} (UserNo: {{$.user.no}})`
+	template := `The task on node {{  $.node.name }} (enabled: {{$.node.enabled}}, max_runners: {{$.node.settings.max_runners}}) has completed.
+Yours, {{$.user.username}} ({{$.user.no}}) and {{$.user[update].username}} ({{$.user[update].no}})`
 	err = p.Parse(template)
 	require.Nil(t, err)
 
-	task := bson.M{
-		"node_id": nodeId,
-		"user_id": userId,
-	}
 	content, err := p.Render(task)
 	require.Nil(t, err)
-	require.Equal(t, `The task on node Test Node (enabled: true) has completed.
-Yours, Test Username (UserNo: 1001)`, content)
+	require.Equal(t, `The task on node Test Node (enabled: true, max_runners: 8) has completed.
+Yours, Test Username (1001) and Test2 Username (1002)`, content)
 }
 
 func cleanup() {
 	_ = mongo.GetMongoCol("nodes").Delete(nil)
+	_ = mongo.GetMongoCol("spiders").Delete(nil)
+	_ = mongo.GetMongoCol("tasks").Delete(nil)
 	_ = mongo.GetMongoCol("users").Delete(nil)
 }
