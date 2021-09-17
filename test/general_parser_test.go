@@ -10,7 +10,7 @@ import (
 	"testing"
 )
 
-func TestMarkdownParser(t *testing.T) {
+func TestGeneralParser(t *testing.T) {
 	p, _ := parser.NewGeneralParser()
 	content := `The task {{  $.node }} (enabled: {{$.node.enabled}}) has completed.
 Yours, {{$.user}}`
@@ -19,7 +19,7 @@ Yours, {{$.user}}`
 	require.Nil(t, err)
 }
 
-func TestMarkdownParser_Parse(t *testing.T) {
+func TestGeneralParser_Parse(t *testing.T) {
 	var err error
 	t.Cleanup(cleanup)
 
