@@ -93,6 +93,45 @@ Spider Result Count: 5000
 Yours, Test Username (1001) and Test2 Username (1002)`, content)
 }
 
+func TestGeneralParser_ParseMath(t *testing.T) {
+	var err error
+	t.Cleanup(cleanup)
+
+	taskId := primitive.NewObjectID()
+	task := bson.M{
+		"_id": taskId,
+	}
+	_, err = mongo.GetMongoCol("task_stats").Insert(bson.M{
+		"_id":              taskId,
+		"wait_duration":    20000,
+		"runtime_duration": 80000,
+		"total_duration":   100000,
+		"result_count":     500,
+	})
+	require.Nil(t, err)
+
+	p, _ := parser.NewGeneralParser()
+	template := `The task has completed.
+Wait Duration: {# {{ $.:task_stat.wait_duration }} / 1000 #}
+Runtime Duration: {# {{$.:task_stat.runtime_duration}} / 1000 #}
+Total Duration: {# ({{$.:task_stat.wait_duration}} + {{$.:task_stat.runtime_duration}}) / 1000 #}
+Result Count: {{$.:task_stat.result_count}}
+Avg Results per Sec: {# {{$.:task_stat.result_count}} / ({{$.:task_stat.total_duration}} / 1000) #}
+`
+	err = p.Parse(template)
+	require.Nil(t, err)
+
+	content, err := p.Render(task)
+	require.Nil(t, err)
+	require.Equal(t, `The task has completed.
+Wait Duration: 20
+Runtime Duration: 80
+Total Duration: 100
+Result Count: 500
+Avg Results per Sec: 5
+`, content)
+}
+
 func cleanup() {
 	_ = mongo.GetMongoCol("nodes").Delete(nil)
 	_ = mongo.GetMongoCol("spiders").Delete(nil)

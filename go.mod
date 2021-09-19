@@ -6,6 +6,8 @@ require (
 	github.com/apex/log v1.9.0
 	github.com/crawlab-team/crawlab-db v0.1.1
 	github.com/prometheus/common v0.4.0
+	github.com/robertkrimen/otto v0.0.0-20210614181706-373ff5438452
 	github.com/stretchr/testify v1.6.1
 	go.mongodb.org/mongo-driver v1.4.5
+	gopkg.in/sourcemap.v1 v1.0.5 // indirect
 )
