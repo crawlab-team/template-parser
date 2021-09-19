@@ -58,8 +58,8 @@ func (p *GeneralParser) Render(args ...interface{}) (content string, err error) 
 
 		// value
 		value, err := v.GetValue()
-		if err != nil {
-			return "", err
+		if err != nil || value == nil {
+			value = "N/A"
 		}
 
 		// old string
@@ -90,7 +90,7 @@ func (p *GeneralParser) GetPlaceholders() (placeholders []string) {
 }
 
 func NewGeneralParser() (p Parser, err error) {
-	tagPattern := "\\{\\{ *([\\$\\.\\w_\\[\\]]+) *\\}\\}"
+	tagPattern := "\\{\\{ *([\\$\\.\\w_:\\[\\]]+) *\\}\\}"
 	tagRegexp, err := regexp.Compile(tagPattern)
 	if err != nil {
 		return nil, err

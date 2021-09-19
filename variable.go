@@ -12,6 +12,7 @@ import (
 )
 
 var userRegexp, _ = regexp.Compile("^user(?:\\[(\\w+)\\])?$")
+var extRegexp, _ = regexp.Compile("^(\\w+)?:(\\w+)")
 
 type Variable struct {
 	root   interface{}
@@ -62,32 +63,25 @@ func (v *Variable) getNextNode(currentNode bson.M, currentIndex int) (nextNode b
 
 	// if next token is user or user[<action>]
 	if userRegexp.MatchString(nextToken) {
-		return v.getNextNodeByUid(currentNode, nextIndex, nextToken)
+		return v.getNextNodeUserAction(currentNode, nextIndex, nextToken)
 	}
 
+	// if next token is <model>:<ext>
+	if extRegexp.MatchString(nextToken) {
+		return v.getNextNodeExt(currentNode, nextIndex, nextToken)
+	}
+
+	// model
+	model := nextToken
+
 	// next id
-	nextIdKey := fmt.Sprintf("%s_id", nextToken)
-	nextIdRes, ok := currentNode[nextIdKey]
-	if !ok {
-		return nil, errors.New(fmt.Sprintf("%s is not available in %s", nextIdKey, strings.Join(v.tokens[:nextIndex], ".")))
-	}
-	nextId, ok := nextIdRes.(primitive.ObjectID)
-	if !ok {
-		nextIdStr, ok := nextIdRes.(string)
-		if !ok {
-			return nil, errors.New(fmt.Sprintf("%s is not ObjectId in %s", nextIdKey, strings.Join(v.tokens[:nextIndex], ".")))
-		}
-		nextId, err = primitive.ObjectIDFromHex(nextIdStr)
-		if err != nil {
-			return nil, err
-		}
-	}
-	if nextId.IsZero() {
-		return nil, nil
+	nextId, err := v._getNodeModelId(currentNode, model, nextIndex)
+	if err != nil {
+		return nil, err
 	}
 
 	// mongo collection name
-	colName := fmt.Sprintf("%ss", nextToken)
+	colName := fmt.Sprintf("%ss", model)
 
 	// get next node from mongo collection
 	if err := mongo.GetMongoCol(colName).FindId(nextId).One(&nextNode); err != nil {
@@ -97,7 +91,7 @@ func (v *Variable) getNextNode(currentNode bson.M, currentIndex int) (nextNode b
 	return nextNode, nil
 }
 
-func (v *Variable) getNextNodeByUid(currentNode bson.M, nextIndex int, nextToken string) (nextNode bson.M, err error) {
+func (v *Variable) getNextNodeUserAction(currentNode bson.M, nextIndex int, nextToken string) (nextNode bson.M, err error) {
 	// action
 	matches := userRegexp.FindStringSubmatch(nextToken)
 	action := "create"
@@ -106,17 +100,9 @@ func (v *Variable) getNextNodeByUid(currentNode bson.M, nextIndex int, nextToken
 	}
 
 	// id
-	idRes, ok := currentNode["_id"]
-	if !ok {
-		return nil, errors.New(fmt.Sprintf("%s is not available in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
-	}
-	idStr, ok := idRes.(string)
-	if !ok {
-		return nil, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
-	}
-	id, err := primitive.ObjectIDFromHex(idStr)
+	id, err := v._getCurrentNodeId(currentNode, nextIndex)
 	if err != nil {
-		return nil, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+		return nil, err
 	}
 
 	// artifact
@@ -145,6 +131,51 @@ func (v *Variable) getNextNodeByUid(currentNode bson.M, nextIndex int, nextToken
 	return nextNode, nil
 }
 
+func (v *Variable) getNextNodeExt(currentNode bson.M, nextIndex int, nextToken string) (nextNode bson.M, err error) {
+	matches := extRegexp.FindStringSubmatch(nextToken)
+	var model, ext string
+	var mode int
+	if matches[1] == "" {
+		// :<model>_<ext>
+		mode = 0
+		arr := strings.Split(matches[2], "_")
+		model = arr[0]
+		ext = arr[1]
+	} else {
+		// <model>:<ext>
+		mode = 1
+		model = matches[1]
+		ext = matches[2]
+	}
+
+	// id
+	var id primitive.ObjectID
+	switch mode {
+	case 0:
+		// id = currentNode._id
+		id, err = v._getCurrentNodeId(currentNode, nextIndex)
+		if err != nil {
+			return nil, err
+		}
+	case 1:
+		// id = currentNode.<model>_id
+		id, err = v._getNodeModelId(currentNode, model, nextIndex)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		return nil, errors.New(fmt.Sprintf("invalid mode: %d", mode))
+	}
+
+	// ext
+	colName := fmt.Sprintf("%s_%ss", model, ext)
+	if err := mongo.GetMongoCol(colName).FindId(id).One(&nextNode); err != nil {
+		return nil, err
+	}
+
+	return nextNode, nil
+}
+
 func (v *Variable) getNextValue(currentNode bson.M, currentIndex int) (nextValue interface{}) {
 	// next index and token
 	nextIndex := currentIndex + 1
@@ -154,6 +185,53 @@ func (v *Variable) getNextValue(currentNode bson.M, currentIndex int) (nextValue
 	nextValue, _ = currentNode[nextToken]
 
 	return nextValue
+}
+
+func (v *Variable) _getCurrentNodeId(currentNode bson.M, nextIndex int) (id primitive.ObjectID, err error) {
+	idRes, ok := currentNode["_id"]
+	if !ok {
+		return id, errors.New(fmt.Sprintf("%s is not available in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+	switch idRes.(type) {
+	case string:
+		idStr, ok := idRes.(string)
+		if !ok {
+			return id, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+		}
+		id, err = primitive.ObjectIDFromHex(idStr)
+		if err != nil {
+			return id, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+		}
+		return id, nil
+	case primitive.ObjectID:
+		return idRes.(primitive.ObjectID), nil
+	default:
+		return id, errors.New(fmt.Sprintf("%s is not ObjectId in %s", "_id", strings.Join(v.tokens[:nextIndex], ".")))
+	}
+}
+
+func (v *Variable) _getNodeModelId(currentNode bson.M, model string, nextIndex int) (id primitive.ObjectID, err error) {
+	nextIdKey := fmt.Sprintf("%s_id", model)
+	nextIdRes, ok := currentNode[nextIdKey]
+	if !ok {
+		return id, errors.New(fmt.Sprintf("%s is not available in %s", nextIdKey, strings.Join(v.tokens[:nextIndex], ".")))
+	}
+	nextId, ok := nextIdRes.(primitive.ObjectID)
+	if !ok {
+		nextIdStr, ok := nextIdRes.(string)
+		if !ok {
+			return id, errors.New(fmt.Sprintf("%s is not ObjectId in %s", nextIdKey, strings.Join(v.tokens[:nextIndex], ".")))
+		}
+		nextId, err = primitive.ObjectIDFromHex(nextIdStr)
+		if err != nil {
+			return id, err
+		}
+	}
+	if nextId.IsZero() {
+		return id, nil
+	}
+
+	return nextId, nil
 }
 
 func NewVariable(root interface{}, placeholder string) (v *Variable, err error) {

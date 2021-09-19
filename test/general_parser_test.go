@@ -38,6 +38,11 @@ func TestGeneralParser_Parse(t *testing.T) {
 		"_id": spiderId,
 	})
 	require.Nil(t, err)
+	_, err = mongo.GetMongoCol("spider_stats").Insert(bson.M{
+		"_id":          spiderId,
+		"result_count": 5000,
+	})
+	require.Nil(t, err)
 	userId := primitive.NewObjectID()
 	_, err = mongo.GetMongoCol("users").Insert(bson.M{
 		"_id":      userId,
@@ -59,6 +64,11 @@ func TestGeneralParser_Parse(t *testing.T) {
 		"node_id":   nodeId,
 		"spider_id": spiderId,
 	}
+	_, err = mongo.GetMongoCol("task_stats").Insert(bson.M{
+		"_id":          taskId,
+		"result_count": 100,
+	})
+	require.Nil(t, err)
 	_, err = mongo.GetMongoCol("artifacts").Insert(bson.M{
 		"_id": taskId,
 		"_sys": bson.M{
@@ -69,6 +79,8 @@ func TestGeneralParser_Parse(t *testing.T) {
 
 	p, _ := parser.NewGeneralParser()
 	template := `The task on node {{  $.node.name }} (enabled: {{$.node.enabled}}, max_runners: {{$.node.settings.max_runners}}) has completed.
+Task Result Count: {{ $.:task_stat.result_count }}
+Spider Result Count: {{ $.spider:stat.result_count }}
 Yours, {{$.user.username}} ({{$.user.no}}) and {{$.user[update].username}} ({{$.user[update].no}})`
 	err = p.Parse(template)
 	require.Nil(t, err)
@@ -76,12 +88,16 @@ Yours, {{$.user.username}} ({{$.user.no}}) and {{$.user[update].username}} ({{$.
 	content, err := p.Render(task)
 	require.Nil(t, err)
 	require.Equal(t, `The task on node Test Node (enabled: true, max_runners: 8) has completed.
+Task Result Count: 100
+Spider Result Count: 5000
 Yours, Test Username (1001) and Test2 Username (1002)`, content)
 }
 
 func cleanup() {
 	_ = mongo.GetMongoCol("nodes").Delete(nil)
 	_ = mongo.GetMongoCol("spiders").Delete(nil)
+	_ = mongo.GetMongoCol("spider_stats").Delete(nil)
 	_ = mongo.GetMongoCol("tasks").Delete(nil)
+	_ = mongo.GetMongoCol("task_stats").Delete(nil)
 	_ = mongo.GetMongoCol("users").Delete(nil)
 }
