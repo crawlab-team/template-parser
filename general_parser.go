@@ -177,13 +177,15 @@ func NewGeneralParser() (p Parser, err error) {
 	mathBasicChars := " \\(\\)"
 	mathOpChars := "\\+\\-\\*/%"
 	mathNumChars := "\\d\\."
+	mathSpecialChars := "(?:NaN|null)"
 	mathPattern := fmt.Sprintf(
-		"%s *([%s%s%s]+) *%s",
+		"%s *([%s%s%s%s]+) *%s",
 		mathPrefix,
 		mathBasicChars,
 		mathOpChars,
 		mathNumChars,
 		mathSuffix,
+		mathSpecialChars,
 	)
 	mathRegexp, err := regexp.Compile(mathPattern)
 	if err != nil {
