@@ -114,9 +114,6 @@ func (p *GeneralParser) renderMathContent(inputContent string) (content string, 
 	indexes := p.mathRegexp.FindAllStringIndex(inputContent, -1)
 	matches := p.mathRegexp.FindAllStringSubmatch(inputContent, -1)
 
-	// replace NA
-	content = strings.ReplaceAll(content, ValueNameNA, otto.NaNValue().String())
-
 	// old strings
 	var oldStrList []string
 	for _, index := range indexes {
@@ -129,6 +126,9 @@ func (p *GeneralParser) renderMathContent(inputContent string) (content string, 
 	for i, m := range matches {
 		// js script to run to get evaluate result
 		script := fmt.Sprintf("%s = %s; %s", VariableNameResult, m[1], VariableNameResult)
+
+		// replace NA
+		script = strings.ReplaceAll(script, ValueNameNA, "NaN")
 
 		// value
 		value, err := p.vm.Run(script)
@@ -184,8 +184,8 @@ func NewGeneralParser() (p Parser, err error) {
 		mathBasicChars,
 		mathOpChars,
 		mathNumChars,
-		mathSuffix,
 		mathSpecialChars,
+		mathSuffix,
 	)
 	mathRegexp, err := regexp.Compile(mathPattern)
 	if err != nil {
